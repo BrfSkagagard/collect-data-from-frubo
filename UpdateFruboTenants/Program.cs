@@ -18,86 +18,98 @@ namespace UpdateFruboTenants
         static private string gitFolder = @"C:\Users\Mattias\Documents\GitHub\";
         static void Main(string[] args)
         {
-            if (args != null && args.Length > 0)
+            try
             {
-                gitFolder = args[0];
-            }
-            //WriteSettings(gitFolder, new FruboLogin
-            //{
-            //    UserName = "",
-            //    Password = ""
-            //});
-            //return;
 
-            var login = ReadSettings(gitFolder);
-
-            var apartments = new List<Apartment>();
-
-            var cookieContainer = new CookieContainer();
-            using (var handler = new HttpClientHandler() { CookieContainer = cookieContainer })
-            {
-                using (HttpClient client = new HttpClient())
+                if (args != null && args.Length > 0)
                 {
-                    client.BaseAddress = new Uri("http://embedded.frubo.se");
+                    gitFolder = args[0];
+                }
+                //WriteSettings(gitFolder, new FruboLogin
+                //{
+                //    UserName = "",
+                //    Password = ""
+                //});
+                //return;
 
-                    if (!Login(client, login))
+                var login = ReadSettings(gitFolder);
+
+                var apartments = new List<Apartment>();
+
+                var cookieContainer = new CookieContainer();
+                using (var handler = new HttpClientHandler() { CookieContainer = cookieContainer })
+                {
+                    using (HttpClient client = new HttpClient())
                     {
-                        // TODO: We where unable to login, do something about this.
-                        Console.WriteLine("Failed login!");
-                        return;
-                    }
-                    Console.WriteLine("logged in!");
+                        client.BaseAddress = new Uri("http://embedded.frubo.se");
 
-                    try
-                    {
-                        apartments.AddRange(GetApartmentsFromUrl(client));
-                    }
-                    catch (Exception ex)
-                    {
-                        //backgroundWorker1.ReportProgress(1, ex.ToString());
-                    }
-
-                    var folderBoard = gitFolder + "brfskagagard-styrelsen" + Path.DirectorySeparatorChar;
-                    var folderBoardExists = Directory.Exists(folderBoard);
-                    foreach (Apartment item in apartments)
-                    {
-                        //backgroundWorker1.ReportProgress(1, item.ToString());
-                        var json = new DataContractJsonSerializer(typeof(Apartment));
-
-                        var folder = gitFolder + "brfskagagard-lgh" + item.Number + Path.DirectorySeparatorChar;
-                        var folderExists = Directory.Exists(folder);
-
-                        // We only want to update repositories that we know about (read: that we have created)
-                        if (folderExists)
+                        if (!Login(client, login))
                         {
-                            using (
-                                var stream =
-                                    File.Create(folder + "apartment.json"))
-                            {
-                                json.WriteObject(stream, item);
-                                stream.Flush();
-                            }
+                            // TODO: We where unable to login, do something about this.
+                            Console.WriteLine("Failed login!");
+                            return;
+                        }
+                        Console.WriteLine("logged in!");
+
+                        try
+                        {
+                            apartments.AddRange(GetApartmentsFromUrl(client));
+                        }
+                        catch (Exception ex)
+                        {
+                            //backgroundWorker1.ReportProgress(1, ex.ToString());
                         }
 
-                        // We only want to update repositories that we know about (read: that we have created)
-                        if (folderBoardExists)
+                        var folderBoard = gitFolder + "brfskagagard-styrelsen" + Path.DirectorySeparatorChar;
+                        var folderBoardExists = Directory.Exists(folderBoard);
+                        foreach (Apartment item in apartments)
                         {
-                            using (
-                                var stream =
-                                    File.Create(folderBoard + "apartment-" + item.Number + ".json"))
+                            //backgroundWorker1.ReportProgress(1, item.ToString());
+                            var json = new DataContractJsonSerializer(typeof(Apartment));
+
+                            var folder = gitFolder + "brfskagagard-lgh" + item.Number + Path.DirectorySeparatorChar;
+                            var folderExists = Directory.Exists(folder);
+
+                            // We only want to update repositories that we know about (read: that we have created)
+                            if (folderExists)
                             {
-                                json.WriteObject(stream, item);
-                                stream.Flush();
+                                using (
+                                    var stream =
+                                        File.Create(folder + "apartment.json"))
+                                {
+                                    json.WriteObject(stream, item);
+                                    stream.Flush();
+                                }
                             }
+
+                            // We only want to update repositories that we know about (read: that we have created)
+                            if (folderBoardExists)
+                            {
+                                using (
+                                    var stream =
+                                        File.Create(folderBoard + "apartment-" + item.Number + ".json"))
+                                {
+                                    json.WriteObject(stream, item);
+                                    stream.Flush();
+                                }
+                            }
+
+
                         }
 
-
+                        Console.WriteLine("Number of appartments: " + apartments.Count);
                     }
-
-                    Console.WriteLine("Number of appartments: " + apartments.Count);
                 }
             }
-
+            catch (Exception ex)
+            {
+                using (var stream = File.CreateText(gitFolder + "updatefrubotenants-last-error.txt"))
+                {
+                    stream.Write(ex.ToString());
+                    stream.Flush();
+                }
+                throw;
+            }
         }
 
         private static bool Login(HttpClient client, FruboLogin login)
