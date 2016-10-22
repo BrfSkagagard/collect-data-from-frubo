@@ -73,9 +73,36 @@ namespace UpdateFruboTenants
                             // We only want to update repositories that we know about (read: that we have created)
                             if (folderExists)
                             {
+                                var fileName = folder + "apartment.json";
+                                var fileExists = File.Exists(fileName);
+                                // If file exist, check if owners has changed (If not, copy phone number, email and contact way)
+                                if (fileExists)
+                                {
+                                    using (
+                                        var stream =
+                                            File.OpenRead(fileName))
+                                    {
+                                        var oldItem = json.ReadObject(stream) as Apartment;
+                                        if (oldItem != null && oldItem.Owners != null && oldItem.Owners.Length > 0)
+                                        {
+                                            foreach (Owner owner in item.Owners)
+                                            {
+                                                var matchingOwner = oldItem.Owners.FirstOrDefault(o => o.Name == owner.Name);
+                                                if (matchingOwner != null)
+                                                {
+                                                    owner.Email = matchingOwner.Email;
+                                                    owner.Phone = matchingOwner.Phone;
+                                                    owner.WayOfInfo = matchingOwner.WayOfInfo;
+                                                    //owner.RegisteredAtAddress = matchingOwner.RegisteredAtAddress;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
                                 using (
                                     var stream =
-                                        File.Create(folder + "apartment.json"))
+                                        File.Create(fileName))
                                 {
                                     json.WriteObject(stream, item);
                                     stream.Flush();
@@ -306,17 +333,13 @@ namespace UpdateFruboTenants
                             owner.Share = share;
                         }
                         owner.MovedIn = dateGroup.Value;
-                        //var tmpName = ownersData.Substring(index, shareGroup.Index - (shareGroup.Length + index));
                         var tmpName = ownersData.Substring(index, shareGroup.Index - (index));
                         var name = Regex.Replace(tmpName, "[^\\w ]", "", RegexOptions.IgnoreCase | RegexOptions.IgnoreCase).Trim();
                         owner.Name = name;
 
-                        // TODO: Make this changable by user (Should check against existing file and if tenant has changed, restore values).
                         owner.WayOfInfo = new string[] { "Brev" };
-                        owner.Phone = "";   // TODO: If not set yet, get this from public records
+                        owner.Phone = "";
                         owner.Email = "";
-
-                        // TODO: Get this for public records
                         owner.RegisteredAtAddress = false;
 
                         owners.Add(owner);
