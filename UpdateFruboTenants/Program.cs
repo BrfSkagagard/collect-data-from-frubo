@@ -355,6 +355,11 @@ namespace UpdateFruboTenants
         {
             switch (apartmentNumber)
             {
+                case 732:
+                case 742:
+                case 752:
+                case 762:
+                    return 95;
                 case 521:
                 case 531:
                 case 541:
