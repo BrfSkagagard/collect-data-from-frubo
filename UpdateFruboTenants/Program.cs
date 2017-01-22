@@ -1,6 +1,7 @@
 ﻿using iTextSharp.text.pdf;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -12,12 +13,18 @@ using System.Threading.Tasks;
 
 namespace UpdateFruboTenants
 {
-    class Program
+    public class Program
     {
+        public static NumberFormatInfo NumberFormat = new NumberFormatInfo();
         public static int _numberOfCharsToKeep = 15;
         static private string gitFolder = @"C:\Users\Mattias\Documents\GitHub\";
         static void Main(string[] args)
         {
+            NumberFormat = new NumberFormatInfo()
+            {
+                NumberDecimalSeparator = ","
+            };
+
             try
             {
 
@@ -35,6 +42,7 @@ namespace UpdateFruboTenants
                 var login = ReadSettings(gitFolder);
 
                 var apartments = new List<Apartment>();
+                var residuals = new List<ResidualInfo>();
 
                 var cookieContainer = new CookieContainer();
                 using (var handler = new HttpClientHandler() { CookieContainer = cookieContainer })
@@ -53,12 +61,15 @@ namespace UpdateFruboTenants
 
                         try
                         {
-                            apartments.AddRange(GetApartmentsFromUrl(client));
+                            apartments.AddRange(ApartmentRepository.GetApartmentsFromUrl(client));
+                            residuals.AddRange(ResidualRepository.GetResidualListFromUrl(client));
                         }
                         catch (Exception ex)
                         {
                             //backgroundWorker1.ReportProgress(1, ex.ToString());
                         }
+
+                        var jsonNotifications = new DataContractJsonSerializer(typeof(Notification[]));
 
                         var folderBoard = gitFolder + "brfskagagard-styrelsen" + Path.DirectorySeparatorChar;
                         var folderBoardExists = Directory.Exists(folderBoard);
@@ -66,6 +77,7 @@ namespace UpdateFruboTenants
                         {
                             //backgroundWorker1.ReportProgress(1, item.ToString());
                             var json = new DataContractJsonSerializer(typeof(Apartment));
+                            //var jsonNotifications = new DataContractJsonSerializer(typeof(Notification[]));
 
                             var folder = gitFolder + "brfskagagard-lgh" + item.Number + Path.DirectorySeparatorChar;
                             var folderExists = Directory.Exists(folder);
@@ -107,6 +119,49 @@ namespace UpdateFruboTenants
                                     json.WriteObject(stream, item);
                                     stream.Flush();
                                 }
+
+                                var residualFileName = folder + "notifications.json";
+                                var residualsForApartment = residuals.Where(r => r.ApartmentNumber == item.Number).ToArray();
+                                var hasResiduals = residualsForApartment != null && residualsForApartment.Length > 0;
+                                if (hasResiduals)
+                                {
+                                    var notifications = new List<Notification>();
+                                    foreach (var residual in residualsForApartment)
+                                    {
+                                        notifications.Add(new Notification
+                                        {
+                                            ApartmentNumber = residual.ApartmentNumber,
+                                            Type = NotificationType.Critical,
+                                            Message = Program.ToHtmlEncodedText($"Ni har en skuld till föreningen på {residual.Debt} kr. Vänligen kontakta Frubo för mer information."),
+                                            ReadMoreLink = "http://www.brfskagagard.se/contact.html#ekonomi"
+                                        });
+                                    }
+
+                                    using (
+                                        var stream =
+                                            File.Create(residualFileName))
+                                    {
+                                        jsonNotifications.WriteObject(stream, notifications.ToArray());
+                                        stream.Flush();
+                                    }
+                                }
+                                else
+                                {
+                                    var residualfileExists = File.Exists(residualFileName);
+                                    if (residualfileExists)
+                                    {
+                                        File.Delete(residualFileName);
+                                    }
+                                }
+
+                                //using (
+                                //    var stream =
+                                //        File.Create(fileName))
+                                //{
+                                //    json.WriteObject(stream, item);
+                                //    stream.Flush();
+                                //}
+
                             }
 
                             // We only want to update repositories that we know about (read: that we have created)
@@ -123,6 +178,31 @@ namespace UpdateFruboTenants
 
 
                         }
+
+                        // We only want to update repositories that we know about (read: that we have created)
+                        if (folderBoardExists)
+                        {
+                            var styrelsenNotifications = new List<Notification>();
+                            if (residuals.Count > 0)
+                            {
+                                styrelsenNotifications.Add(new Notification
+                                {
+                                    ApartmentNumber = -1,
+                                    Type = NotificationType.Warning,
+                                    Message = Program.ToHtmlEncodedText("Det finns en eller flera poster på restlistan hos Frubo"),
+                                    ReadMoreLink = "http://frubo.se/loginfrubo"
+                                });
+                            }
+
+                            using (
+                                var stream =
+                                    File.Create(folderBoard + "notifications.json"))
+                            {
+                                jsonNotifications.WriteObject(stream, styrelsenNotifications.ToArray());
+                                stream.Flush();
+                            }
+                        }
+
 
                         Console.WriteLine("Number of appartments: " + apartments.Count);
                     }
@@ -195,233 +275,16 @@ namespace UpdateFruboTenants
             return response.IsSuccessStatusCode;
         }
 
-        static private List<Apartment> GetApartmentsFromUrl(HttpClient client)
+        public static string ToHtmlEncodedText(string text)
         {
-            var apartments = new List<Apartment>();
-
-            var data = client.GetStringAsync("/main.aspx?rubrikid=4").Result;
-            if (!string.IsNullOrEmpty(data))
-            {
-                var match = Regex.Match(data, "(?<test>spararapport.aspx?[^\"]+)");
-                var group = match.Groups["test"];
-                if (match.Success && group.Success)
-                {
-                    apartments.AddRange(GetApartments(client, group.Value));
-                }
-            }
-            return apartments;
+            var regexp = "[^a-zA-Z0-9 \t]+";
+            var output = Regex.Replace(text, regexp, new MatchEvaluator(MatchEvaluator));
+            return output;
         }
 
-        private static List<Apartment> GetApartments(HttpClient client, string pdfUrl)
+        public static string MatchEvaluator(Match match)
         {
-            List<Apartment> apartments = new List<Apartment>();
-
-            var pages = new StringBuilder();
-            var pdfData = client.GetByteArrayAsync("/" + pdfUrl).Result;
-            PdfReader reader = new PdfReader(pdfData);
-            var nOfPages = reader.NumberOfPages;
-
-            string pageHeader = null;
-            for (int pageNumber = 1; pageNumber <= nOfPages; pageNumber++)
-            {
-                var pageText = ExtractTextFromPDFBytes(reader.GetPageContent(pageNumber));
-                var headerMatch = Regex.Match(pageText, "\n\r68\n");
-                if (headerMatch.Success)
-                {
-                    if (pageHeader == null)
-                    {
-                        // save page header for later use
-                        pageHeader = pageText.Substring(0, headerMatch.Index);
-                    }
-                    // exclude page header
-                    pageText = pageText.Substring(headerMatch.Index);
-                    pages.AppendLine(pageText);
-                    Console.WriteLine(pageText);
-                }
-            }
-            var strPages = pages.ToString();
-            var apartmentPrefix = "122-01-";
-            var matches = Regex.Matches(strPages, apartmentPrefix + "(?<nr>[0-9]{3})");
-            Apartment prevApartment = null;
-            int index = 0;
-            foreach (Match match in matches)
-            {
-                var apartmentNumberGroup = match.Groups["nr"];
-                if (match.Success && apartmentNumberGroup.Success)
-                {
-                    var apartment = new Apartment();
-                    int nr;
-                    if (int.TryParse(apartmentNumberGroup.Value, out nr))
-                    {
-                        if (prevApartment != null && prevApartment.Number == nr)
-                        {
-                            apartment = prevApartment;
-                        }
-                        apartment.Number = nr;
-                        apartment.Size = GetApartmentSize(nr);
-                        if (prevApartment != null)
-                        {
-                            var apartmentData = strPages.Substring(index, apartmentNumberGroup.Index - (index + apartmentPrefix.Length));
-                            AppendApartmentInfo(apartmentData, apartmentPrefix, prevApartment, index);
-                        }
-
-                        index = apartmentNumberGroup.Index + apartmentNumberGroup.Length;
-                        var isSameApartment = prevApartment == apartment;
-                        prevApartment = apartment;
-                        if (!isSameApartment)
-                        {
-                            apartments.Add(apartment);
-                        }
-                    }
-                }
-            }
-
-            // Handle last apartment
-            var lastApartmentData = strPages.Substring(index);
-            AppendApartmentInfo(lastApartmentData, apartmentPrefix, prevApartment, index);
-
-            return apartments;
-        }
-
-        private static void AppendApartmentInfo(string apartmentData, string apartmentPrefix, Apartment apartment, int index)
-        {
-            apartment.Building = GetBuilding(apartmentData);
-            var owners = new List<Owner>();
-            if (apartment.Owners != null)
-            {
-                owners.AddRange(apartment.Owners);
-            }
-            owners.AddRange(GetOwners(apartmentData));
-            apartment.Owners = owners.ToArray();
-        }
-
-        private static string GetBuilding(string apartmentData)
-        {
-            string building = null;
-            //var buildingMatch = Regex.Match(apartmentData, "(?<building>[a-z0-9 ]+),", RegexOptions.IgnoreCase);
-            var buildingMatch = Regex.Match(apartmentData, "(?<building>[\\w ]+),", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-            var buildingGroup = buildingMatch.Groups["building"];
-            if (buildingMatch.Success && buildingGroup.Success)
-            {
-                building = buildingGroup.Value;
-            }
-
-            return building;
-        }
-
-        private static Owner[] GetOwners(string apartmentData)
-        {
-            var owners = new List<Owner>();
-            var postAddressSufix = "KISTA";
-            var postAddressIndex = apartmentData.IndexOf(postAddressSufix);
-            if (postAddressIndex > 0)
-            {
-                var ownersData = apartmentData.Substring(postAddressIndex + postAddressSufix.Length);
-                var ownersMatches = Regex.Matches(ownersData, "(?<share>[0-9]{2,3})(?<date>[0-9]{4}-[0-9]{2}-[0-9]{2})");
-                var index = 0;
-                foreach (Match match in ownersMatches)
-                {
-                    var shareGroup = match.Groups["share"];
-                    var dateGroup = match.Groups["date"];
-
-                    if (match.Success && shareGroup.Success && dateGroup.Success)
-                    {
-                        var owner = new Owner();
-                        int share;
-                        if (int.TryParse(shareGroup.Value, out share))
-                        {
-                            owner.Share = share;
-                        }
-                        owner.MovedIn = dateGroup.Value;
-                        var tmpName = ownersData.Substring(index, shareGroup.Index - (index));
-                        var name = Regex.Replace(tmpName, "[^\\w ]", "", RegexOptions.IgnoreCase | RegexOptions.IgnoreCase).Trim();
-                        owner.Name = name;
-
-                        owner.WayOfInfo = new string[] { "Brev" };
-                        owner.Phone = "";
-                        owner.Email = "";
-                        owner.RegisteredAtAddress = false;
-
-                        owners.Add(owner);
-
-                        index = dateGroup.Index + dateGroup.Length;
-                    }
-                }
-            }
-            return owners.ToArray();
-        }
-
-        public static int GetApartmentSize(int apartmentNumber)
-        {
-            switch (apartmentNumber)
-            {
-                case 732:
-                case 742:
-                case 752:
-                case 762:
-                    return 95;
-                case 521:
-                case 531:
-                case 541:
-                case 551:
-                case 561:
-                    return 88;
-                case 721:
-                case 722:
-                case 731:
-                case 741:
-                case 751:
-                case 761:
-                    return 79;
-                case 523:
-                case 533:
-                case 543:
-                case 553:
-                case 563:
-                    return 67;
-                case 723:
-                case 733:
-                case 743:
-                case 753:
-                case 763:
-                    return 61;
-                case 622:
-                case 632:
-                case 642:
-                case 652:
-                case 662:
-                case 623:
-                case 633:
-                case 643:
-                case 653:
-                case 663:
-                    return 60;
-                case 532:
-                case 542:
-                case 552:
-                case 562:
-                    return 55;
-                case 621:
-                case 631:
-                case 641:
-                case 651:
-                case 661:
-                    return 45;
-                case 624:
-                case 634:
-                case 644:
-                case 654:
-                case 664:
-                    return 44;
-                case 724:
-                case 734:
-                case 744:
-                case 754:
-                case 764:
-                    return 43;
-                default:
-                    return 0;
-            }
+            return "&#" + string.Join(";&#", System.Text.Encoding.Default.GetBytes(match.Value)) + ";";
         }
 
         #region ExtractTextFromPDFBytes
@@ -582,7 +445,7 @@ namespace UpdateFruboTenants
         /// <param name="tokens">the searched token</param>
         /// <param name="recent">the recent character array</param>
         /// <returns></returns>
-        private static bool CheckToken(string[] tokens, char[] recent)
+        public static bool CheckToken(string[] tokens, char[] recent)
         {
             foreach (string token in tokens)
             {
