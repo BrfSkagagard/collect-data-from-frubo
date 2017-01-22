@@ -41,6 +41,7 @@ namespace UpdateFruboTenants
 
                 var login = ReadSettings(gitFolder);
 
+                var oneOrMoreOwnersHasNoEmail = false;
                 var apartments = new List<Apartment>();
                 var residuals = new List<ResidualInfo>();
 
@@ -75,6 +76,7 @@ namespace UpdateFruboTenants
                         var folderBoardExists = Directory.Exists(folderBoard);
                         foreach (Apartment item in apartments)
                         {
+                            var notifications = new List<Notification>();
                             //backgroundWorker1.ReportProgress(1, item.ToString());
                             var json = new DataContractJsonSerializer(typeof(Apartment));
                             //var jsonNotifications = new DataContractJsonSerializer(typeof(Notification[]));
@@ -120,12 +122,24 @@ namespace UpdateFruboTenants
                                     stream.Flush();
                                 }
 
-                                var residualFileName = folder + "notifications.json";
+                                var hasEmail = item.Owners.Any(o => !string.IsNullOrEmpty(o.Email));
+                                if (!hasEmail)
+                                {
+                                    oneOrMoreOwnersHasNoEmail = true;
+                                    notifications.Add(new Notification
+                                    {
+                                        ApartmentNumber = item.Number,
+                                        Type = NotificationType.Warning,
+                                        Message = Program.ToHtmlEncodedText("Ingen e-post adress är kopplad till din lägenhet. För att få snabbare och smidigare information från styrelsen rekommenderar vi att du sätter än. Klicka på länken nedan för att gå vidare"),
+                                        ReadMoreLink = "http://beta.brfskagagard.se/medlem/kontakt/"
+                                    });
+                                }
+
+                                var notificationFileName = folder + "notifications.json";
                                 var residualsForApartment = residuals.Where(r => r.ApartmentNumber == item.Number).ToArray();
                                 var hasResiduals = residualsForApartment != null && residualsForApartment.Length > 0;
                                 if (hasResiduals)
                                 {
-                                    var notifications = new List<Notification>();
                                     foreach (var residual in residualsForApartment)
                                     {
                                         notifications.Add(new Notification
@@ -136,10 +150,13 @@ namespace UpdateFruboTenants
                                             ReadMoreLink = "http://www.brfskagagard.se/contact.html#ekonomi"
                                         });
                                     }
+                                }
 
+                                if (notifications.Count > 0)
+                                {
                                     using (
                                         var stream =
-                                            File.Create(residualFileName))
+                                            File.Create(notificationFileName))
                                     {
                                         jsonNotifications.WriteObject(stream, notifications.ToArray());
                                         stream.Flush();
@@ -147,10 +164,10 @@ namespace UpdateFruboTenants
                                 }
                                 else
                                 {
-                                    var residualfileExists = File.Exists(residualFileName);
+                                    var residualfileExists = File.Exists(notificationFileName);
                                     if (residualfileExists)
                                     {
-                                        File.Delete(residualFileName);
+                                        File.Delete(notificationFileName);
                                     }
                                 }
 
@@ -191,6 +208,16 @@ namespace UpdateFruboTenants
                                     Type = NotificationType.Warning,
                                     Message = Program.ToHtmlEncodedText("Det finns en eller flera poster på restlistan hos Frubo"),
                                     ReadMoreLink = "http://frubo.se/loginfrubo"
+                                });
+                            }
+                            if (oneOrMoreOwnersHasNoEmail)
+                            {
+                                styrelsenNotifications.Add(new Notification
+                                {
+                                    ApartmentNumber = -1,
+                                    Type = NotificationType.Normal,
+                                    Message = Program.ToHtmlEncodedText("Det finns en eller flera lägenheter som saknar angiven e-post."),
+                                    ReadMoreLink = "http://beta.brfskagagard.se/styrelsen/boende/"
                                 });
                             }
 
