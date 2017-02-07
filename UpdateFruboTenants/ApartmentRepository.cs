@@ -135,7 +135,7 @@ namespace UpdateFruboTenants
             if (postAddressIndex > 0)
             {
                 var ownersData = apartmentData.Substring(postAddressIndex + postAddressSufix.Length);
-                var ownersMatches = Regex.Matches(ownersData, "(?<share>[0-9]{2,3})(?<date>[0-9]{4}-[0-9]{2}-[0-9]{2})");
+                var ownersMatches = Regex.Matches(ownersData, "(?<share>[0-9.]{2,4})(?<date>[0-9]{4}-[0-9]{2}-[0-9]{2})");
                 var index = 0;
                 foreach (Match match in ownersMatches)
                 {
@@ -145,8 +145,8 @@ namespace UpdateFruboTenants
                     if (match.Success && shareGroup.Success && dateGroup.Success)
                     {
                         var owner = new Owner();
-                        int share;
-                        if (int.TryParse(shareGroup.Value, out share))
+                        double share;
+                        if (double.TryParse(shareGroup.Value, out share))
                         {
                             owner.Share = share;
                         }
