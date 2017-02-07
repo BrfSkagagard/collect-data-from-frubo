@@ -130,8 +130,8 @@ namespace UpdateFruboTenants
                                     {
                                         ApartmentNumber = item.Number,
                                         Type = NotificationType.Warning,
-                                        Message = Program.ToHtmlEncodedText("Ingen e-post adress är kopplad till din lägenhet. För att få snabbare och smidigare information från styrelsen rekommenderar vi att du sätter än. Klicka på länken nedan för att gå vidare"),
-                                        ReadMoreLink = "http://beta.brfskagagard.se/medlem/kontakt/"
+                                        Message = Program.ToHtmlEncodedText("Ingen e-post adress är kopplad till din lägenhet. Klicka på länken för att veta mer."),
+                                        ReadMoreLink = "/medlem/kontakt/"
                                     });
                                 }
 
@@ -147,7 +147,7 @@ namespace UpdateFruboTenants
                                             ApartmentNumber = residual.ApartmentNumber,
                                             Type = NotificationType.Critical,
                                             Message = Program.ToHtmlEncodedText($"Ni har en skuld till föreningen på {residual.Debt} kr. Vänligen kontakta Frubo för mer information."),
-                                            ReadMoreLink = "http://www.brfskagagard.se/contact.html#ekonomi"
+                                            ReadMoreLink = "/kontakt/#ekonomi"
                                         });
                                     }
                                 }
@@ -217,7 +217,7 @@ namespace UpdateFruboTenants
                                     ApartmentNumber = -1,
                                     Type = NotificationType.Normal,
                                     Message = Program.ToHtmlEncodedText("Det finns en eller flera lägenheter som saknar angiven e-post."),
-                                    ReadMoreLink = "http://beta.brfskagagard.se/styrelsen/boende/"
+                                    ReadMoreLink = "/styrelsen/boende/"
                                 });
                             }
 
